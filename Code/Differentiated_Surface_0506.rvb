@@ -8,8 +8,8 @@
 'Differentiated Surfaces
 'Daniel Cardoso Llach
 
-'Neri Oxman and I originally worked on this code in 2006 as part of the 
-'Computational Geometry for Spatial and Design Reasoning at MIT.
+'Neri Oxman and I originally worked on the first version of this project in 2006. I further developed it as part of the 
+'Computational Geometry for Spatial and Design Reasoning course at MIT with Dennis Shelden.
 
 'I'm using some of the vector-vertex methods from Stelios Dritsas
 'http://dritsas.net/scripting/library/__vector.html
