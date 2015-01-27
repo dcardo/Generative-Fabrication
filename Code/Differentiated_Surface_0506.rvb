@@ -1,0 +1,1250 @@
+﻿
+
+
+'------------------------------------------------------------------------------------
+
+
+
+
+'Daniel Cardoso
+'Computational Geometry for Spatial and Design Reasoning
+
+
+'I'm using some of the vector-vertex methods from Stelios Dritsas
+'http://dritsas.net/scripting/library/__vector.html
+
+
+
+
+'------------------------------------------------------------------------------------
+
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ '::::::::::::              Main subroutine           :::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+Sub Main()
+
+
+
+	' Allocating memory space for the variables entered by the user
+
+	Dim curveA
+	Dim curveB
+
+	Dim ptNum1 : ptNum1 = 20
+	Dim ptNum2 : ptNum2 = 20
+	Dim hMax : hMax = 2.0
+	Dim hMin : hMin = 0.2
+
+
+
+	' Getting info from the user
+
+	curveA = Rhino.getObject("Enter curve", 4)
+	curveB = Rhino.getObject("Enter curve", 4)
+
+	ptNum1 = Rhino.IntegerBox("Enter number of Subdivisions along mother curves: ", ptNum1)
+	ptNum2 = Rhino.IntegerBox("Enter number of Pieces: ", ptNum2)
+
+	'Rhino.RealBox ([strMessage [, dblNumber [, strTitle]]])
+
+
+
+	hMax = Rhino.RealBox("Enter Maximum Height of the pieces: ", hMax)
+	hMin = Rhino.RealBox("Enter Minimum Height of the pieces: ", hMin)
+
+
+
+	' Creating the variables that are dependant on the user-input values
+
+	Redim curveA_points(ptNum1)
+	Redim curveB_points(ptNum1)
+
+	dim ParamsC1 'Pts1 stands for the actual points to be placed on curve C1.
+	dim ParamsC2 'Pts2 stands for the actual points to be placed on curve C2.
+	
+	dim Pts1
+	dim Pts2
+
+	dim Uval1 'Uval is assigned the relative position of any given points (Pts1 and Pts2 respectfully) along the BSpline curves (c1 and c2 respectively). 
+	dim Uval2 'It's actually the same as a Tvalue point in GC.
+	Dim currentLine
+	
+	redim mat(ptNum1+1, ptNum2+1)
+	redim transversals(ptNum1+1)
+	redim surfaces(ptNum2+1)
+
+	' Creating the layers
+
+	Rhino.AddLayer "transversals", RGB(66, 180, 217), 0
+	Rhino.AddLayer "childCurves", RGB(175, 223, 91), 0
+	Rhino.AddLayer "dummyLines", RGB(181, 186, 188), 0
+	Rhino.AddLayer "ribCurves", RGB(255, 0, 255), 0
+	Rhino.AddLayer "surfaces", RGB(217, 66, 66), 0
+	Rhino.AddLayer "red", RGB(255, 0, 0), 0
+	Rhino.AddLayer "blue", RGB(0, 0, 255), 0
+
+	Rhino.CurrentLayer("transversals")
+
+	'Subdividing Mother Curves and creating the 2d array of points
+
+	ParamsC1 = Rhino.curveDomain(curveA)
+	ParamsC2 = Rhino.curveDomain(curveB)
+
+    
+	for i=0 to ptNum1
+    
+		Uval1 = ((ParamsC1(1) - ParamsC1(0)) / (ptNum1)) * (i)
+		Uval2 = ((ParamsC2(1) - ParamsC2(0)) / (ptNum1)) * (i)
+    
+		Pts1 = Rhino.EvaluateCurve(curveA, Uval1)
+		Pts2 = Rhino.EvaluateCurve(curveB, Uval2)
+	    
+		'this process allows us to place points along the two mother curves. These points are relative points and thus use the same Uval.
+		Rhino.CurrentLayer("transversals")
+		currentLine = Rhino.AddLine(Pts1, Pts2)
+		transversals(i) = currentLine
+	    
+		'each line, as it is being created, is stored in "currentLine"
+	    
+		for j=0 to ptNum2
+         
+			dim paramsCurrentLine : paramsCurrentLine = Rhino.CurveDomain(currentLine) 
+			dim UvalCurrent : UvalCurrent = ((paramsCurrentLine(1) - paramsCurrentLine(0)) / (ptNum2)) * (j)
+			mat(i, j) = Rhino.EvaluateCurve(currentLine, UvalCurrent) 
+         
+		next
+          
+	next
+
+
+
+	'Finding the sequences of points n the matrix
+
+	for m=0 to ptNum2
+	
+		redim ribPoints(ptNum1)
+		dim pl
+		  
+		for n=0 to ptNum1 'Iterating through the segments
+	          
+			ribPoints(n) = mat(n, m)
+			  
+		next
+		 
+		if isArray(ribPoints) then
+            
+			Rhino.CurrentLayer("ribCurves")
+			pl = Rhino.AddPolyline(ribPoints) 	 
+			surfaces(m) = createSurface(pl, ptNum1, hMax, hMin)
+		 	 
+		else
+         
+			Rhino.Print "Not an Array"
+		 
+		end if
+		   
+	next
+
+	'Putting all the transversals in a separate layer
+
+	Dim currentTransversal
+	Dim transversalLength
+	reDim insertionPoint(2)
+	reDim notchedTransversal(ptNum1+1)
+
+	insertionPoint(0) = 1
+	insertionPoint(1) = 16
+	insertionPoint(2) = 0
+
+	for i = 0 to ptNum1
+
+		currentTransversal = transversals(i) 
+		transversalLength = Rhino.CurveLength(currentTransversal)
+    
+		Rhino.Print "transversal " & i & " ID = " & currentTransversal & ", Length = " & transversalLength
+    
+		Rhino.ObjectLayer currentTransversal, "transversal"
+    
+		notchedTransversal(i) = createNotchedTransversal(transversalLength, hMin, ptNum2, insertionPoint)
+    
+		insertionPoint(0) = insertionPoint(0)
+		insertionPoint(1) = insertionPoint(1) - (hMin + 0.3)
+    
+	next
+
+
+
+End Sub
+
+
+Main
+
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ '::::::::::::       big, fat, funky subroutine       :::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+function createSurface(crv1, ptNum1, hMax, hMin)
+
+
+	Dim pointsOnCurve
+	Dim strAng
+	Dim range
+	Dim strRange, strMinimum
+	Dim pLineA, pLineB, pLineBottom, pLineTop
+	
+	Rhino.Print "---------------------------------------------------------------------------------"
+	
+	'ptNum1 represents the number of points along the "mother" curves to indicate the number of subdivisions.
+	
+	reDim arrAngles( ptNum1 - 1 )
+	reDim dummyPoints(ptNum1+1)
+	reDim dummyTop(ptNum1+1)
+	reDim dummyBottom(ptNum1+1)
+
+	' Create an array of points on the curve that subdivides the curve using the subdivideCurve function
+	
+	pointsOnCurve = subdivideCurve(crv1, ptNum1)
+	Rhino.Print "---------------------------------------------------------------------------------"
+		
+	' Now I need to find the angles described by every pair of segments, and store them in an array
+	
+	for i = 1 to ptNum1 - 1
+		
+		arrAngles(i - 1) = findAngle(pointsOnCurve(i), pointsOnCurve(i - 1), pointsOnCurve(i + 1))
+		strAng = "Angle: " & findAngle(pointsOnCurve(i), pointsOnCurve(i - 1), pointsOnCurve(i + 1))
+		'Rhino.Print(strAng)
+    
+	next
+
+	' Having the points, and the angles, I can use my secondary functions to create a second subset of points that provides the top edge of the piece. In order to
+	'do that, I create a new array, dummyPoints
+	
+	dummyPoints(0) = pointsOnCurve(0)
+	dummyPoints(ptNum1) = pointsOnCurve(ptNum1)
+	
+	for i = 1 to UBound(pointsOnCurve) - 2
+    
+		dummyPoints(i) = createDummy(pointsOnCurve(i), pointsOnCurve(i - 1), pointsOnCurve(i + 1), hMin, hMax, findMin(arrAngles), findMax(arrAngles), arrAngles(i - 1))
+
+	next
+    
+	'DummyTop
+    
+	dummyTop(0) = pointsOnCurve(0)
+	dummyTop(ptNum1) = pointsOnCurve(ptNum1)
+	
+	for i = 1 to UBound(pointsOnCurve) - 2
+    
+		dummyTop(i) = createDummyTop(pointsOnCurve(i), pointsOnCurve(i - 1), pointsOnCurve(i + 1), hMin, hMax, findMin(arrAngles), findMax(arrAngles), arrAngles(i - 1))
+
+	next
+    
+    
+	'DummyBottom
+    
+	dummyBottom(0) = pointsOnCurve(0)
+	dummyBottom(ptNum1) = pointsOnCurve(ptNum1)
+	
+	for i = 1 to UBound(pointsOnCurve) - 2
+    
+		dummyBottom(i) = createDummyBottom(pointsOnCurve(i), pointsOnCurve(i - 1), pointsOnCurve(i + 1), hMin, hMax, findMin(arrAngles), findMax(arrAngles), arrAngles(i - 1))
+
+	next
+    
+	Rhino.Print "---------------------------------------------------------------------------------"
+
+
+	' Join the endpoints of these segments, and the initial set of points to create a closed curve. End.
+	
+	'Joining PointsOnCurve with a PolyLine
+        
+	reDim pointsA(ptNum1) 'this array stores the points in the bottom part of the piece, to be joined
+    
+	for i = 0 to ptNum1
+    
+		pointsA(i) = pointsOnCurve(i)
+    
+	next
+    
+    
+	reDim pointsBottom(ptNum1) 'this array stores the points in the bottom inner part of the piece, to be joined
+    
+	for i = 0 to ptNum1
+    
+		pointsBottom(i) = dummyBottom(i)
+    
+	next
+    
+    
+    
+	redim pointsTop(ptNum1) 'This array stores the points in the top inner part of the piece, to be joined
+    
+	for i = 0 to ptNum1
+    
+		pointsTop(i) = dummyTop(i)
+    
+	next
+    
+    
+    
+	redim pointsB(ptNum1) 'This array stores the points in the top part of the piece, to be joined
+    
+	for i = 0 to ptNum1
+    
+		pointsB(i) = dummyPoints(i)
+    
+	next
+   
+  
+	Rhino.CurrentLayer("childCurves")
+    
+	pLineA = Rhino.AddPolyline(pointsA)
+	pLineB = Rhino.AddPolyline(pointsB)
+	pLineTop = Rhino.AddPolyline(pointsTop)
+	pLineBottom = Rhino.AddPolyline(pointsBottom)
+    
+	Rhino.CurrentLayer("surfaces")
+    
+	redim twoLines(1)
+	redim twoSurfaces(1)
+    
+	twoLines(0) = pLineA
+	twoLines(1) = pLineBottom
+    
+	'Joining both PolyLines
+    
+	call rhino.command("selnone")
+	Rhino.SelectObjects(twoLines)
+
+	call rhino.command("-join")
+	call rhino.command("-patch enter enter")
+    
+	twoSurfaces(0) = Rhino.LastObject
+    
+    
+	twoLines(0) = pLineB
+	twoLines(1) = pLineTop
+    
+	'Joining both PolyLines
+    
+	call rhino.command("selnone")
+	Rhino.SelectObjects(twoLines)
+
+	call rhino.command("-join")
+	call rhino.command("-patch enter enter")
+    
+	twoSurfaces(1) = Rhino.LastObject
+    
+	call rhino.command("selnone")
+	Rhino.SelectObjects(twoSurfaces)
+	call rhino.command("-join enter")
+    
+	'This surface is the output of the function:
+    
+	Rhino.CurrentLayer("surfaces")
+    
+    
+  
+    
+End function
+
+
+
+
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ '::::::::::::          additional functions          :::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::        subdivision of the curve 	 ::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+function subdivideCurve(c1, ptNum1)
+
+	'this function will subdivide the curve in ptNum1 segments, creates an array of points, that will be used for
+	'finding the angles, then the normals, and then the vertexes for the performance (second) curve
+	
+	' May 14:
+	' I will adjust this function to return an array of points that has in it's 1st and last position the starting and ending point
+	' of the curve, respectively.
+	
+	'Rhino.Print "Subdividing "
+	
+	dim ParamsC1, Pts1, i, j
+	dim Uval1
+	dim x, y, z
+	dim strPoint
+	
+	ParamsC1 = Rhino.curveDomain(c1)
+	
+	reDim pointsOnCurve(ptNum1 + 1)
+	
+	for i = 0 to ptNum1
+	
+		Uval1 = ((ParamsC1(1) - ParamsC1(0)) / (ptNum1)) * (i)
+		pointsOnCurve(i) = Rhino.EvaluateCurve(c1, Uval1)
+		
+		x = pointsOnCurve(i)(0)
+		y = pointsOnCurve(i)(1)
+		z = pointsOnCurve(i)(2)
+		
+		strPoint = "Point " & x & ", " & y & ", " & z
+		
+		Rhino.Print(strPoint)
+			
+	next
+	
+	subdivideCurve = pointsOnCurve
+	
+end function
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::                   dummy          	 ::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+function createDummy(p1, p2, p3, hMin, hMax, aMin, aMax, angle)
+
+
+	dim V1 'The vector between p1 and p2
+	dim v1_n 'The normalized vector between p1 and p2
+    
+	dim V2 'The vector between p1 and p3
+	dim v2_n 'The normalized vector between p1 and p3
+    
+	dim v_bisec 'The bisector to v1_n and v2_n vector  
+	dim v_bisec_n 'The normalized bisector vector
+    
+	dim v_scaled 'The bisector vector scaled
+    
+	dim hFactor  'This factor will define the lenght of the bisector vector
+	dim slope
+	dim yInter
+    
+	redim dummyPoint(2) 'This is the endpoint of the scaled bisector segment, it's the goal of this function
+    
+	dim strAngData 'Output String for control
+    
+	'In the actual implementation the following variables should be entered as parameters
+    
+	hFactor = 3
+    
+	'creating the vectors
+	
+	V1 = vector_create(p1, p2)
+	'Rhino.AddLine p1, p2
+	'Rhino.Sleep 10
+	
+	V2 = vector_create(p1, p3)
+	'Rhino.AddLine p1, p3
+	'Rhino.Sleep 10
+	
+	
+	'normalizing the vectors
+	
+	v1_n = vector_normalize(v1)
+	'Rhino.AddLine v1_n, VECTOR_NL
+	
+	v2_n = vector_normalize(v2)
+	'Rhino.AddLine v2_n, VECTOR_NL
+	'Rhino.Sleep 100
+	
+	
+	'creating the bisector vector and adding a line to make it explicit
+	
+	v_bisec = vector_add(v1_n, v2_n)
+	'Rhino.AddLine VECTOR_NL, v_bisec
+	
+	'Normalizing Bisector
+	v_bisec_n = vector_normalize(v_bisec)
+	
+	
+	'Here we find the factor
+	
+	' We evaluate if the angle is greater or smaller than 180, in order to find the slope and the y-intercept
+	
+	if angle > 180 then 
+	
+		slope = (hMin - hMax) / ( aMax - 180 ) 
+		'Rhino.Print slope
+		yInter = hMax - ( slope * 180 )
+		hFactor = ( slope * angle ) + yInter
+	
+	else 
+	
+		slope = (hMin - hMax) / ( aMin - 180 ) 
+		yInter = hMax - ( slope * 180 )
+		'Rhino.Print slope
+		hFactor = ( slope * angle ) + yInter
+        
+	end if
+	
+	strAngData = "Angle= " & angle & ", Factor= " & hFactor 
+	Rhino.Print strAngData
+	
+	
+	'Scaling Bisector (scaling dependant on the angle and range)
+	
+	v_scaled = vector_scale(v_bisec_n, hFactor)
+	'Rhino.AddLine v_scaled, VECTOR_NL
+	
+	'Creating the bisector in p1
+	
+	dim real_bisector 
+	
+	'Checking if it's Convex
+	
+	if is_Convex(v1_n, v2_n) then 
+	
+	
+		real_bisector = vector_new( _
+			p1(VECTOR_X) - v_scaled(VECTOR_X), _
+			p1(VECTOR_Y) - v_scaled(VECTOR_Y), _
+			p1(VECTOR_Z) - v_scaled(VECTOR_Z)_
+			)
+        
+		Rhino.CurrentLayer("dummyLines")    
+		Rhino.AddLine p1, real_bisector
+		
+		
+	else 
+            
+            
+		real_bisector = vector_new( _
+			p1(VECTOR_X) + v_scaled(VECTOR_X), _
+			p1(VECTOR_Y) + v_scaled(VECTOR_Y), _
+			p1(VECTOR_Z) + v_scaled(VECTOR_Z)_
+			)
+		Rhino.CurrentLayer("dummyLines")
+		Rhino.AddLine p1, real_bisector
+			
+	end if	
+
+	createDummy = real_bisector
+	
+end function
+
+
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::                   dummy          	 ::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+function createDummyTop(p1, p2, p3, hMin, hMax, aMin, aMax, angle)
+
+
+	dim V1 'The vector between p1 and p2
+	dim v1_n 'The normalized vector between p1 and p2
+    
+	dim V2 'The vector between p1 and p3
+	dim v2_n 'The normalized vector between p1 and p3
+    
+	dim v_bisec 'The bisector to v1_n and v2_n vector  
+	dim v_bisec_n 'The normalized bisector vector
+    
+	dim v_scaled 'The bisector vector scaled
+    
+	dim hFactor  'This factor will define the lenght of the bisector vector
+	dim slope
+	dim yInter
+    
+	redim dummyPoint(2) 'This is the endpoint of the scaled bisector segment, it's the goal of this function
+    
+	dim strAngData 'Output String for control
+    
+	'In the actual implementation the following variables should be entered as parameters
+    
+	hFactor = 3
+    
+	'creating the vectors
+	
+	V1 = vector_create(p1, p2)
+	'Rhino.AddLine p1, p2
+	'Rhino.Sleep 10
+	
+	V2 = vector_create(p1, p3)
+	'Rhino.AddLine p1, p3
+	'Rhino.Sleep 10
+	
+	
+	'normalizing the vectors
+	
+	v1_n = vector_normalize(v1)
+	'Rhino.AddLine v1_n, VECTOR_NL
+	
+	v2_n = vector_normalize(v2)
+	'Rhino.AddLine v2_n, VECTOR_NL
+	'Rhino.Sleep 100
+	
+	
+	'creating the bisector vector and adding a line to make it explicit
+	
+	v_bisec = vector_add(v1_n, v2_n)
+	'Rhino.AddLine VECTOR_NL, v_bisec
+	
+	'Normalizing Bisector
+	v_bisec_n = vector_normalize(v_bisec)
+	
+	
+	'Here we find the factor
+	
+	' We evaluate if the angle is greater or smaller than 180, in order to find the slope and the y-intercept
+	
+	if angle > 180 then 
+	
+		slope = (hMin - hMax) / ( aMax - 180 ) 
+		'Rhino.Print slope
+		yInter = hMax - ( slope * 180 )
+		hFactor = ( slope * angle ) + yInter
+	
+	else 
+	
+		slope = (hMin - hMax) / ( aMin - 180 ) 
+		yInter = hMax - ( slope * 180 )
+		'Rhino.Print slope
+		hFactor = ( slope * angle ) + yInter
+        
+	end if
+	
+	strAngData = "Angle= " & angle & ", Factor= " & hFactor 
+	Rhino.Print strAngData
+	
+	
+	'Scaling Bisector (scaling dependant on the angle and range)
+	
+	
+	v_scaled = vector_scale(v_bisec_n, (hFactor - hMin))
+	'Rhino.AddLine v_scaled, VECTOR_NL
+	
+	'Creating the bisector in p1
+	
+	dim real_bisector 
+	
+	'Checking if it's Convex
+	
+	if is_Convex(v1_n, v2_n) then 
+	
+	
+		real_bisector = vector_new( _
+			p1(VECTOR_X) - v_scaled(VECTOR_X), _
+			p1(VECTOR_Y) - v_scaled(VECTOR_Y), _
+			p1(VECTOR_Z) - v_scaled(VECTOR_Z)_
+			)
+        
+		Rhino.CurrentLayer("dummyLines")    
+		Rhino.AddLine p1, real_bisector
+		
+		
+	else 
+            
+            
+		real_bisector = vector_new( _
+			p1(VECTOR_X) + v_scaled(VECTOR_X), _
+			p1(VECTOR_Y) + v_scaled(VECTOR_Y), _
+			p1(VECTOR_Z) + v_scaled(VECTOR_Z)_
+			)
+		Rhino.CurrentLayer("dummyLines")
+		Rhino.AddLine p1, real_bisector
+			
+	end if	
+
+	createDummyTop = real_bisector
+	
+end function
+
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::                   dummy          	 ::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+function createDummyBottom(p1, p2, p3, hMin, hMax, aMin, aMax, angle)
+
+
+	dim V1 'The vector between p1 and p2
+	dim v1_n 'The normalized vector between p1 and p2
+    
+	dim V2 'The vector between p1 and p3
+	dim v2_n 'The normalized vector between p1 and p3
+    
+	dim v_bisec 'The bisector to v1_n and v2_n vector  
+	dim v_bisec_n 'The normalized bisector vector
+    
+	dim v_scaled 'The bisector vector scaled
+    
+	dim hFactor  'This factor will define the lenght of the bisector vector
+	dim slope
+	dim yInter
+    
+	redim dummyPoint(2) 'This is the endpoint of the scaled bisector segment, it's the goal of this function
+    
+	dim strAngData 'Output String for control
+
+    
+	hFactor = 3
+    
+	'creating the vectors
+	
+	V1 = vector_create(p1, p2)
+	'Rhino.AddLine p1, p2
+	'Rhino.Sleep 10
+	
+	V2 = vector_create(p1, p3)
+	'Rhino.AddLine p1, p3
+	'Rhino.Sleep 10
+	
+	
+	'normalizing the vectors
+	
+	v1_n = vector_normalize(v1)
+	'Rhino.AddLine v1_n, VECTOR_NL
+	
+	v2_n = vector_normalize(v2)
+	'Rhino.AddLine v2_n, VECTOR_NL
+	'Rhino.Sleep 100
+	
+	
+	'creating the bisector vector and adding a line to make it explicit
+	
+	v_bisec = vector_add(v1_n, v2_n)
+	'Rhino.AddLine VECTOR_NL, v_bisec
+	
+	'Normalizing Bisector
+	v_bisec_n = vector_normalize(v_bisec)
+	
+	
+	'Here we find the factor
+	
+	' We evaluate if the angle is greater or smaller than 180, in order to find the slope and the y-intercept
+	
+	if angle > 180 then 
+	
+		slope = (hMin - hMax) / ( aMax - 180 ) 
+		'Rhino.Print slope
+		yInter = hMax - ( slope * 180 )
+		hFactor = ( slope * angle ) + yInter
+	
+	else 
+	
+		slope = (hMin - hMax) / ( aMin - 180 ) 
+		yInter = hMax - ( slope * 180 )
+		'Rhino.Print slope
+		hFactor = ( slope * angle ) + yInter
+        
+	end if
+	
+	strAngData = "Angle= " & angle & ", Factor= " & hFactor 
+	Rhino.Print strAngData
+	
+	
+	'Scaling Bisector (scaling dependant on the angle and range)-----------------------
+	
+	v_scaled = vector_scale(v_bisec_n, hMin)
+	'Rhino.AddLine v_scaled, VECTOR_NL
+	
+	'Creating the bisector in p1
+	
+	dim real_bisector 
+	
+	'Checking if it's Convex
+	
+	if is_Convex(v1_n, v2_n) then 
+	
+	
+		real_bisector = vector_new( _
+			p1(VECTOR_X) - v_scaled(VECTOR_X), _
+			p1(VECTOR_Y) - v_scaled(VECTOR_Y), _
+			p1(VECTOR_Z) - v_scaled(VECTOR_Z)_
+			)
+        
+		Rhino.CurrentLayer("dummyLines")    
+		Rhino.AddLine p1, real_bisector
+		
+		
+	else 
+            
+            
+		real_bisector = vector_new( _
+			p1(VECTOR_X) + v_scaled(VECTOR_X), _
+			p1(VECTOR_Y) + v_scaled(VECTOR_Y), _
+			p1(VECTOR_Z) + v_scaled(VECTOR_Z)_
+			)
+		Rhino.CurrentLayer("dummyLines")
+		Rhino.AddLine p1, real_bisector
+			
+	end if	
+
+	createDummyBottom = real_bisector
+	
+end function
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::     notching transversal pieces         	:::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+function createNotchedTransversal(transversalLength, hMin, ptNum2, insertionPoint)
+
+	dim thickness : thickness = 0.039
+
+	Redim pointA(2)
+	Redim pointB(2)
+	Redim pointC(2)
+	Redim pointD(2)
+
+	'Rhino.Print "Here i ammmmmm "
+
+	pointA(0) = insertionPoint(0)
+	pointA(1) = insertionPoint(1)
+	pointA(2) = 0
+
+	pointB(0) = insertionPoint(0) + transversalLength
+	pointB(1) = insertionPoint(1)
+	pointB(2) = 0
+
+	pointC(0) = insertionPoint(0) + transversalLength
+	pointC(1) = insertionPoint(1) - hMin
+	pointC(2) = 0
+
+	pointD(0) = insertionPoint(0)
+	pointD(1) = insertionPoint(1) - hMin
+	pointD(2) = 0
+
+	Redim perimeter(4)
+
+	perimeter(0) = pointA
+	perimeter(1) = pointB
+	perimeter(2) = pointC
+	perimeter(3) = pointD
+	perimeter(4) = pointA
+
+	Rhino.AddPolyline(perimeter)
+
+
+
+	redim perimeterNotch(4)
+	redim notchInsertionPoint(2)
+
+	redim nPointA(2)
+	redim nPointB(2)
+	redim nPointC(2)
+	redim nPointD(2)
+
+	notchInsertionPoint(0) = pointD(0)
+	notchInsertionPoint(1) = pointD(1)
+	notchInsertionPoint(2) = pointD(2)
+
+	for i = 0 to ptNum2
+
+		nPointA(0) = notchInsertionPoint(0) + (thickness / 2)
+		nPointA(1) = notchInsertionPoint(1)
+		nPointA(2) = 0
+
+		nPointB(0) = notchInsertionPoint(0) + (thickness / 2)
+		nPointB(1) = notchInsertionPoint(1) + (hMin / 2)
+		nPointB(2) = 0
+
+		nPointC(0) = notchInsertionPoint(0) - (thickness / 2)
+		nPointC(1) = notchInsertionPoint(1) + (hMin / 2)
+		nPointC(2) = 0
+
+		nPointD(0) = notchInsertionPoint(0) - (thickness / 2)
+		nPointD(1) = notchInsertionPoint(1)
+		nPointD(2) = 0
+
+
+		perimeterNotch(0) = nPointA
+		perimeterNotch(1) = nPointB
+		perimeterNotch(2) = nPointC
+		perimeterNotch(3) = nPointD
+		perimeterNotch(4) = nPointA
+
+		Rhino.AddPolyline(perimeterNotch)
+
+		notchInsertionPoint(0) = notchInsertionPoint(0) + (transversalLength / ptNum2)
+
+	next
+
+
+end function
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::    convexity or concavity of segments 	:::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+function is_Convex(pt1, pt2)
+
+	if ( ( pt1(2) + pt2(2) ) > 0 ) then
+	
+		is_Convex = false
+	
+	else 
+	
+		if ( ( pt1(2) + pt2(2) ) < 0 ) then
+	
+			is_Convex = true
+		
+		else 
+		
+			if ( ( pt1(2) + pt2(2) ) = 0 ) then
+		
+				Rhino.Print("Continuous segments")
+			
+			end if	
+			
+		
+		end if	
+	
+	
+	end if
+
+end function
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::        radians to degrees 		 		:::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+function radiansToDegrees(angle)
+
+	dim angDeg
+	angDeg = (angle * 180) / 3.14159265
+	radiansToDegrees = angDeg
+	
+end function
+
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::    	    finding the range		 	 	:::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+'Takes an array of angles, finds the range (max - min values)
+
+function findMax(arr) 
+
+	dim highValue : highvalue = arr(0)
+	dim strMax
+
+	'finding max
+	
+	for j = 1 to UBound(arr)
+	
+		if arr(j) > highValue then
+			
+			highValue = arr(j)
+		
+		end if
+		
+	next
+	
+	findMax = highValue
+	
+end function
+
+
+
+function findMin(arr) 
+	
+	dim lowValue : lowValue = arr(0)
+	dim strMin
+	dim j
+
+	for j = 1 to UBound(arr) - 1
+		
+		if arr(j) < lowValue then
+			
+			lowValue = arr(j)
+			
+		else 
+		
+			lowValue = lowValue
+			
+		end if
+		
+	next
+	
+	findMin = lowValue
+	
+end function
+
+
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::                find angle              ::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+'::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+'This is the key function must return the x y and z coordinates of a point on the bisecting line
+'of the angle described by the segments that join the 3 points.
+
+ 
+function findAngle(p1, p2, p3)
+
+	'creating the vectors
+	
+	dim V1: V1 = vector_create(p1, p2)
+	'Rhino.AddLine p1, p2
+	
+	dim V2: V2 = vector_create(p1, p3)
+	'Rhino.AddLine p1, p3
+	
+	
+	'normalizing the vectors
+	
+	dim v1_n : v1_n = vector_normalize(v1)
+	'Rhino.AddLine v1_n, VECTOR_NL
+	
+	dim v2_n : v2_n = vector_normalize(v2)
+	'Rhino.AddLine v2_n, VECTOR_NL
+	
+		
+	'finding the dot product of the two normalized vectors
+	
+	dim vDot
+		
+	vDot = vector_dot(v1_n, v2_n)
+
+	'finding angle
+	
+	dim angleInRadians
+		
+	angleInRadians = number_arccos(vDot)
+	
+	
+	dim angleInDegrees
+
+	angleInDegrees = radiansToDegrees(angleInRadians)
+
+	
+	
+	'detecting if the two vectors are convex or not, and changing the angle accordingly for height calculation.
+	
+	if is_Convex(v1_n, v2_n) then 
+	
+		angleInDegrees = 360 - angleInDegrees
+	
+	else
+	
+		angleInDegrees = angleInDegrees
+	
+	end if
+	
+	findAngle = angleInDegrees
+	
+end function
+
+
+
+	
+ 
+	
+
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ '::::::::::::        stelios dristas functions	      :::::::::::::::::
+ '::::::::::::                                        ::::::::::::::::: 
+ '::::::::::::          for vector geometry           :::::::::::::::::
+ '::::::::::::                                        :::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
+
+'--- vector ----
+
+''  Vector member's access constants
+
+dim VECTOR_X: VECTOR_X = 0
+dim VECTOR_Y: VECTOR_Y = 1
+dim VECTOR_Z: VECTOR_Z = 2
+  
+  ''  Prefab basis vectors
+  ''
+dim VECTOR_NL: VECTOR_NL = vector_new(0.0, 0.0, 0.0)
+dim VECTOR_DX: VECTOR_DX = vector_new(1.0, 0.0, 0.0)
+dim VECTOR_DY: VECTOR_DY = vector_new(0.0, 1.0, 0.0)
+dim VECTOR_DZ: VECTOR_DZ = vector_new(0.0, 0.0, 1.0)
+        
+
+
+function vector_dot(va, vb)
+	vector_dot = va(VECTOR_X) * vb(VECTOR_X) + _
+		va(VECTOR_Y) * vb(VECTOR_Y) + _
+		va(VECTOR_Z) * vb(VECTOR_Z)
+end function
+
+
+
+function vector_bisector(vertex, u, v)
+
+	vector_bisector = vector_normalize( _
+		vector_create( _
+		vertex, _
+		vertex_middle( _
+		vertex_translate(vertex, u), _
+		vertex_translate(vertex, v)_
+		)_
+		)_
+		)
+end function
+  
+  
+
+function vector_normalize(vector)
+	dim length: length = vector_length(vector)
+	if( length = 0.0 ) then
+		vector_normalize = vector_new(0.0, 0.0, 0.0)
+	else
+		vector_normalize = vector_new( _
+			vector(VECTOR_X) / length, _
+			vector(VECTOR_Y) / length, _
+			vector(VECTOR_Z) / length)
+	end if
+end function
+
+
+
+function vector_length(vector)
+	vector_length = sqr( _
+		vector(VECTOR_X) * vector(VECTOR_X) + _
+		vector(VECTOR_Y) * vector(VECTOR_Y) + _
+		vector(VECTOR_Z) * vector(VECTOR_Z)_
+		)
+end function
+
+
+
+function vector_create(va, vb)
+	vector_create = vector_new( _
+		vb(VECTOR_X) - va(VECTOR_X), _
+		vb(VECTOR_Y) - va(VECTOR_Y), _
+		vb(VECTOR_Z) - va(VECTOR_Z)_
+		)
+end function
+
+
+function vector_new(x, y, z)
+	vector_new = vertex_new(x, y, z)
+end function
+
+
+function vector_add(va, vb)
+	vector_add = vector_new( _
+		va(VECTOR_X) + vb(VECTOR_X), _
+		va(VECTOR_Y) + vb(VECTOR_Y), _
+		va(VECTOR_Z) + vb(VECTOR_Z)_
+		)
+end function
+
+function vector_scale(vector, factor)
+	vector_scale = vector_new( _
+		vector(VECTOR_X) * factor, _
+		vector(VECTOR_Y) * factor, _
+		vector(VECTOR_Z) * factor)
+end function
+
+  
+'-----Vertex-----
+  
+  
+   '' Vertex property mapping
+ 
+dim VERTEX_X: VERTEX_X = 0
+dim VERTEX_Y: VERTEX_Y = 1
+dim VERTEX_Z: VERTEX_Z = 2
+  
+  '' Prefab null vertex
+  ''
+dim VERTEX_NULL: VERTEX_NULL = vertex_new(0.0, 0.0, 0.0)
+        
+        
+
+function vertex_new(x, y, z)
+	vertex_new = array(x, y, z)
+end function
+
+
+function vertex_middle(va, vb)
+	vertex_middle = vertex_new( _
+		( va(VERTEX_X) + vb(VERTEX_X) ) / 2.0, _
+		( va(VERTEX_Y) + vb(VERTEX_Y) ) / 2.0, _
+		( va(VERTEX_Z) + vb(VERTEX_Z) ) / 2.0_
+		)
+end function
+
+
+function vertex_translate(vertex, vector)
+	vertex_translate = vertex_new( _
+		vertex(VERTEX_X) + vector(VERTEX_X), _
+		vertex(VERTEX_Y) + vector(VERTEX_Y), _
+		vertex(VERTEX_Z) + vector(VERTEX_Z)_
+		)
+end function
+  
+  
+  
+  '------Number-------
+  
+function number_arccos(number)
+	if( number = 1.0 ) then
+		number_arccos = 0.0
+	elseif( number = -1.0 ) then
+		number_arccos = NUMBER_PI
+	else
+		number_arccos = atn(-number / sqr(abs(1.0 - number * number))) + 2.0 * atn(1.0)
+	end if
+end function
