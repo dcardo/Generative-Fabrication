@@ -5,10 +5,11 @@
 
 
 
+'Differentiated Surfaces
+'Daniel Cardoso Llach
 
-'Daniel Cardoso
-'Computational Geometry for Spatial and Design Reasoning
-
+'Neri Oxman and I originally worked on this code in 2006 as part of the 
+'Computational Geometry for Spatial and Design Reasoning at MIT.
 
 'I'm using some of the vector-vertex methods from Stelios Dritsas
 'http://dritsas.net/scripting/library/__vector.html
